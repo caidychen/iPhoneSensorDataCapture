@@ -11,7 +11,7 @@
 #import "PTDataTableViewController.h"
 #import "PTDataTableViewCell.h"
 
-#define PT_LOG_FILEPATH [[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0] stringByAppendingPathComponent:@"PTlogfile.txt"]
+#define PT_LOG_FILEPATH [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0]
 
 #define MAX_LOG_FILE_SIZE 100000000 // Maximum log file size: 500 KB
 
@@ -20,14 +20,19 @@
     CGFloat magnetometerX, magnetometerY, magnetometerZ;
     CGFloat gyroscopicX, gyroscopicY, gyroscopicZ;
     
-    
+    BOOL recording;
+    BOOL blink;
 }
 @property (nonatomic, strong) UITableView *tableView;
+@property (nonatomic, strong) UIButton *startButton;
+@property (nonatomic, strong) UIView *redDot;
+@property (nonatomic, strong) NSString *currentPath;
 
 @property (nonatomic, strong) CMMotionManager *motionManager;
 @property (nonatomic, strong) CLLocationManager *locationManager;
 
 @property (nonatomic, strong) NSTimer *timer;
+@property (nonatomic, strong) NSTimer *recordingTimer;
 @property (nonatomic, strong) NSString *logMsg;
 @property (nonatomic, strong) NSFileHandle *handle;
 @end
@@ -38,19 +43,21 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
 - (void)viewDidLoad {
     [super viewDidLoad];
     
+    recording = NO;
+    self.redDot.hidden = YES;
     [[UIApplication sharedApplication] setStatusBarHidden:YES];
     // Do any additional setup after loading the view.
     self.view.backgroundColor = [UIColor blackColor];
     [self.view addSubview:self.tableView];
-    
+    [self.view addSubview:self.startButton];
+    [self.view addSubview:self.redDot];
+    self.startButton.frame = CGRectMake(0, self.tableView.frame.size.height, self.view.bounds.size.width, 90);
+    self.redDot.center = CGPointMake(self.startButton.center.x, self.startButton.center.y+(self.view.bounds.size.height-self.startButton.center.y)/2);
     [self startMyMotionDetect];
     [self.locationManager startUpdatingHeading];
-    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.004 target:self selector:@selector(log) userInfo:nil repeats:YES];
-    [self.timer fire];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:PT_LOG_FILEPATH]) {
-        [[NSFileManager defaultManager] createFileAtPath:PT_LOG_FILEPATH contents:nil attributes:nil];
-    }
-    self.handle = [NSFileHandle fileHandleForWritingAtPath:PT_LOG_FILEPATH];
+//    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.004 target:self selector:@selector(log) userInfo:nil repeats:YES];
+//    [self.timer fire];
+
 }
 
 - (void)didReceiveMemoryWarning {
@@ -59,17 +66,63 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
 }
 
 -(void)dealloc{
-    [self.handle closeFile];
+    
+}
+
+-(NSString *)generateFilePath{
+    return [PT_LOG_FILEPATH stringByAppendingPathComponent:[NSString stringWithFormat:@"%@",[self getCurrentDateString]]];
+}
+
+-(NSString *)getCurrentDateString{
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+
+    NSString *stringFromDate = [formatter stringFromDate:[NSDate date]];
+    return stringFromDate;
+}
+
+-(void)toggleStart{
+    if (!recording) {
+        self.currentPath = [self generateFilePath];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:self.currentPath]) {
+            [[NSFileManager defaultManager] createFileAtPath:self.currentPath contents:nil attributes:nil];
+        }
+        self.handle = [NSFileHandle fileHandleForWritingAtPath:self.currentPath];
+        self.timer = [NSTimer scheduledTimerWithTimeInterval:0.004 target:self selector:@selector(log) userInfo:nil repeats:YES];
+        [self.timer fire];
+        
+        recording = YES;
+        blink = YES;
+        [self.startButton setTitle:@"STOP" forState:UIControlStateNormal];
+        self.recordingTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(blinkRedDot) userInfo:nil repeats:YES];
+        [self.recordingTimer fire];
+    }else{
+        [self.timer invalidate];
+        self.timer = nil;
+        [self.handle closeFile];
+        recording = NO;
+        [self.startButton setTitle:@"START" forState:UIControlStateNormal];
+        [self.recordingTimer invalidate];
+        self.recordingTimer = nil;
+        self.redDot.hidden = YES;
+        NSError *error = nil;
+        [[NSFileManager defaultManager] moveItemAtPath:self.currentPath toPath:[self.currentPath stringByAppendingString:[NSString stringWithFormat:@" -> %@.txt",[self getCurrentDateString]]] error:&error];
+    }
+}
+
+-(void)blinkRedDot{
+    blink = !blink;
+    self.redDot.hidden = blink;
 }
 
 -(void)append:(NSString *)msg{
     // create if needed
-    unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:PT_LOG_FILEPATH error:nil] fileSize];
-    if (fileSize > MAX_LOG_FILE_SIZE) {
-        NSFileManager *fileManager= [NSFileManager defaultManager];
-        [fileManager removeItemAtPath:PT_LOG_FILEPATH error:nil];
-        [[NSFileManager defaultManager] createFileAtPath:PT_LOG_FILEPATH contents:nil attributes:nil];
-    }
+//    unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:PT_LOG_FILEPATH error:nil] fileSize];
+//    if (fileSize > MAX_LOG_FILE_SIZE) {
+//        NSFileManager *fileManager= [NSFileManager defaultManager];
+//        [fileManager removeItemAtPath:PT_LOG_FILEPATH error:nil];
+//        [[NSFileManager defaultManager] createFileAtPath:PT_LOG_FILEPATH contents:nil attributes:nil];
+//    }
 
     // append
     
@@ -131,7 +184,7 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
 }
 
 -(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath{
-    return [UIScreen mainScreen].bounds.size.height/3;
+    return [UIScreen mainScreen].bounds.size.height/3-30;
 }
 
 -(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath{
@@ -158,7 +211,7 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
 
 -(UITableView *)tableView{
     if (!_tableView) {
-        _tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
+        _tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height-100) style:UITableViewStylePlain];
         _tableView.backgroundColor = [UIColor blackColor];
         _tableView.delegate = self;
         _tableView.dataSource = self;
@@ -167,6 +220,24 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
         _tableView.scrollEnabled = NO;
     }
     return _tableView;
+}
+
+-(UIButton *)startButton{
+    if (!_startButton) {
+        _startButton = [[UIButton alloc] init];
+        [_startButton setTitle:@"START" forState:UIControlStateNormal];
+        [_startButton addTarget:self action:@selector(toggleStart) forControlEvents:UIControlEventTouchUpInside];
+    }
+    return _startButton;
+}
+
+-(UIView *)redDot{
+    if (!_redDot) {
+        _redDot = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 8, 8)];
+        _redDot.backgroundColor = [UIColor redColor];
+        _redDot.layer.cornerRadius = 4;
+    }
+    return _redDot;
 }
 
 - (CMMotionManager *)motionManager{

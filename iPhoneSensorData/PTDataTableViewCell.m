@@ -59,7 +59,7 @@
 -(UILabel *)sensorName{
     if (!_sensorName) {
         _sensorName = [[UILabel alloc] init];
-        _sensorName.font = [UIFont systemFontOfSize:25];
+        _sensorName.font = [UIFont systemFontOfSize:22];
         _sensorName.textColor = [UIColor whiteColor];
     }
     return _sensorName;

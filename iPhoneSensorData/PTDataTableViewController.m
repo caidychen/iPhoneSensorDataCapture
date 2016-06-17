@@ -22,6 +22,8 @@
     
     BOOL recording;
     BOOL blink;
+    
+    NSInteger counter;
 }
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UIButton *startButton;
@@ -42,7 +44,7 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+    counter = 0;
     recording = NO;
     self.redDot.hidden = YES;
     [[UIApplication sharedApplication] setStatusBarHidden:YES];
@@ -54,7 +56,10 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
     self.startButton.frame = CGRectMake(0, self.tableView.frame.size.height, self.view.bounds.size.width, 90);
     self.redDot.center = CGPointMake(self.startButton.center.x, self.startButton.center.y+(self.view.bounds.size.height-self.startButton.center.y)/2);
     [self startMyMotionDetect];
-    [self.locationManager startUpdatingHeading];
+    if ([CLLocationManager headingAvailable]) {
+        [self.locationManager startUpdatingHeading];
+    }
+    
 //    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.004 target:self selector:@selector(log) userInfo:nil repeats:YES];
 //    [self.timer fire];
 
@@ -88,7 +93,7 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
             [[NSFileManager defaultManager] createFileAtPath:self.currentPath contents:nil attributes:nil];
         }
         self.handle = [NSFileHandle fileHandleForWritingAtPath:self.currentPath];
-        self.timer = [NSTimer scheduledTimerWithTimeInterval:0.004 target:self selector:@selector(log) userInfo:nil repeats:YES];
+        self.timer = [NSTimer scheduledTimerWithTimeInterval:0.006 target:self selector:@selector(log) userInfo:nil repeats:YES];
         [self.timer fire];
         
         recording = YES;
@@ -97,6 +102,7 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
         self.recordingTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(blinkRedDot) userInfo:nil repeats:YES];
         [self.recordingTimer fire];
     }else{
+        counter = 0;
         [self.timer invalidate];
         self.timer = nil;
         [self.handle closeFile];
@@ -138,9 +144,15 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
     [formatter setDateFormat:@"HH:mm:ss:SSS"];
     dateString = [formatter stringFromDate:[NSDate date]];
     
-    self.logMsg = [NSString stringWithFormat:@"[%@]A:%.3f,%.3f,%f M:%.3f,%.3f,%.3f G:%.3f,%.3f,%.3f\n",dateString,accelerometerX,accelerometerY,accelerometerZ,magnetometerX,magnetometerY,magnetometerZ,gyroscopicX,gyroscopicY,gyroscopicZ];
-    //NSLog(@"%@",self.logMsg);
+    if ([CLLocationManager headingAvailable]) {
+        self.logMsg = [NSString stringWithFormat:@"[%ld]A:%.3f,%.3f,%f M:%.3f,%.3f,%.3f G:%.3f,%.3f,%.3f\n",(long)counter,accelerometerX,accelerometerY,accelerometerZ,magnetometerX,magnetometerY,magnetometerZ,gyroscopicX,gyroscopicY,gyroscopicZ];
+    }else{
+        self.logMsg = [NSString stringWithFormat:@"[%ld]A:%.3f,%.3f,%f G:%.3f,%.3f,%.3f\n",(long)counter,accelerometerX,accelerometerY,accelerometerZ,gyroscopicX,gyroscopicY,gyroscopicZ];
+
+    }
+        //NSLog(@"%@",self.logMsg);
     [self append:self.logMsg];
+    counter++;
 }
 
 - (void)startMyMotionDetect{
@@ -175,12 +187,21 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
     [self.tableView reloadData];
 }
 
+- (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error{
+    NSLog(@"Location Manager failed with Error");
+}
+
 -(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{
     return 1;
 }
 
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{
-    return 3;
+    if ([CLLocationManager headingAvailable]) {
+        return 3;
+    }else{
+        return 2;
+    }
+    
 }
 
 -(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath{
@@ -195,7 +216,11 @@ static NSString *PTDataTableViewCellID = @"PTDataTableViewCellID";
             break;
         }
         case 1:{
-            [cell setAttirbuteWithX:magnetometerX y:magnetometerY z:magnetometerZ sensorName:@"(磁力计) Magnetometer" xTitle:@"X" yTitle:@"Y" zTitle:@"Z"];
+            if ([CLLocationManager headingAvailable]){
+                [cell setAttirbuteWithX:magnetometerX y:magnetometerY z:magnetometerZ sensorName:@"(磁力计) Magnetometer" xTitle:@"X" yTitle:@"Y" zTitle:@"Z"];
+            }else{
+                [cell setAttirbuteWithX:gyroscopicX y:gyroscopicY z:gyroscopicZ sensorName:@"(陀螺仪) Gyroscopic Sensor" xTitle:@"Yaw" yTitle:@"Pitch" zTitle:@"Roll"];
+            }
             break;
         }
         case 2:{
